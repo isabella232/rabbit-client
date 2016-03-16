@@ -4,19 +4,42 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"io/ioutil"
 	"log"
 
 	"github.com/streadway/amqp"
 )
 
-type amqpConfiguration struct {
-	url      string
-	cert     string
-	key      string
-	caCerts  []string
-	exchange string
-	queue    string
+// AMQPConfiguration is what it says
+type AMQPConfiguration struct {
+	URL       string           `json:"url"`
+	Exchange  string           `json:"exchange"`
+	Queue     string           `json:"queue"`
+	TLSConfig TLSConfiguration `json:"tls_config"`
+}
+
+// TLSConfiguration contains the configuration for doing TLS
+type TLSConfiguration struct {
+	Cert    string   `json:"cert"`
+	Key     string   `json:"key"`
+	CACerts []string `json:"ca_cert"`
+}
+
+// IsValid checks for blanks and obvious errors
+func (t TLSConfiguration) IsValid() bool {
+	if t.Cert == "" {
+		return false
+	}
+
+	if t.Key == "" {
+		return false
+	}
+
+	if t.CACerts == nil {
+		return false
+	}
+	return true
 }
 
 // Message is a container for the payload and command
@@ -31,30 +54,6 @@ type Message struct {
 // consumer can handle the success/failure decision
 func (m Message) Ack(state bool) {
 	m.delivery.Ack(state)
-}
-
-// Connect returns a connected consumer that you can immediately start
-// taking off of the IncomingMessages channel
-func Connect(amqpConfig *amqpConfiguration) (<-chan *Message, error) {
-	messages := make(chan *Message)
-
-	// first get a TLS connection to the broker
-	conn, err := dial(amqpConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	// then connect to the exchange
-	deliveries, err := connect(conn, amqpConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	log.Println("Consumer connected and starting to consume")
-
-	// everything "should" be ok - start translating
-	go translate(deliveries, messages)
-	return messages, nil
 }
 
 // responsible for translating between the AMQP delivery and the Message
@@ -73,12 +72,16 @@ func translate(deliveries <-chan amqp.Delivery, messages chan<- *Message) {
 	close(messages)
 }
 
-// responsible for contacting the broker with a TLS connection
-func dial(config *amqpConfiguration) (*amqp.Connection, error) {
+// Dial is responsible for contacting the broker with a TLS connection
+func dial(url string, config *TLSConfiguration) (*amqp.Connection, error) {
+	if !config.IsValid() {
+		return nil, errors.New("the TLS configuration is invalid")
+	}
+
 	cfg := new(tls.Config)
 
 	cfg.RootCAs = x509.NewCertPool()
-	for _, certPath := range config.caCerts {
+	for _, certPath := range config.CACerts {
 		ca, err := ioutil.ReadFile(certPath)
 		if err != nil {
 			return nil, err
@@ -86,18 +89,18 @@ func dial(config *amqpConfiguration) (*amqp.Connection, error) {
 		cfg.RootCAs.AppendCertsFromPEM(ca)
 	}
 
-	cert, err := tls.LoadX509KeyPair(config.cert, config.key)
+	cert, err := tls.LoadX509KeyPair(config.Cert, config.Key)
 	if err != nil {
 		return nil, err
 	}
 	cfg.Certificates = append(cfg.Certificates, cert)
 
-	log.Printf("Connecting to AMQ: %s\n", config.url)
-	return amqp.DialTLS(config.url, cfg)
+	log.Printf("Connecting to AMQ: %s\n", url)
+	return amqp.DialTLS(url, cfg)
 }
 
 // responsible for setting up the actual queue, and starting to consume
-func connect(conn *amqp.Connection, config *amqpConfiguration) (<-chan amqp.Delivery, error) {
+func connect(conn *amqp.Connection, config *AMQPConfiguration) (<-chan amqp.Delivery, error) {
 	log.Printf("Connected to broker - getting Channel\n")
 	channel, err := conn.Channel()
 	if err != nil {
@@ -105,7 +108,7 @@ func connect(conn *amqp.Connection, config *amqpConfiguration) (<-chan amqp.Deli
 	}
 
 	if err = channel.ExchangeDeclare(
-		config.exchange, // name
+		config.Exchange, // name
 		"fanout",        // kind
 		true,            // durable
 		true,            // auto delete
@@ -117,10 +120,10 @@ func connect(conn *amqp.Connection, config *amqpConfiguration) (<-chan amqp.Deli
 	}
 
 	var queue amqp.Queue
-	log.Printf("Declaring queue %s\n", config.queue)
+	log.Printf("Declaring queue %s\n", config.Queue)
 
 	if queue, err = channel.QueueDeclare(
-		config.queue, // name of the queue
+		config.Queue, // name of the queue
 		true,         // durable
 		true,         // delete when usused
 		false,        // exclusive
@@ -133,7 +136,7 @@ func connect(conn *amqp.Connection, config *amqpConfiguration) (<-chan amqp.Deli
 	if err = channel.QueueBind(
 		queue.Name,            // name of the queue
 		"bitballoon.commands", // bindingKey
-		config.exchange,       // sourceExchange
+		config.Exchange,       // sourceExchange
 		false,                 // noWait
 		nil,                   // arguments
 	); err != nil {
