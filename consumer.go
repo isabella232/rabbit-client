@@ -1,4 +1,4 @@
-package client
+package main
 
 import "log"
 
@@ -14,7 +14,7 @@ func NewConsumer(amqpConfig *AMQPConfiguration) (<-chan *Message, error) {
 	}
 
 	// then connect to the exchange
-	deliveries, err := connect(conn, amqpConfig)
+	deliveries, err := connect(conn, amqpConfig.Exchange, amqpConfig.Queue)
 	if err != nil {
 		return nil, err
 	}
