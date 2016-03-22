@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/codegangsta/cli"
+	rc "github.com/netlify/rabbit-client"
 )
 
 func main() {
@@ -51,7 +52,7 @@ func main() {
 
 func connectToBroker(c *cli.Context) {
 	url := fmt.Sprintf(c.GlobalString("url"))
-	tlsConf := TLSConfiguration{
+	tlsConf := rc.TLSConfiguration{
 		Cert:    c.GlobalString("cert"),
 		Key:     c.GlobalString("key"),
 		CACerts: []string{c.GlobalString("cacert")},
@@ -60,7 +61,7 @@ func connectToBroker(c *cli.Context) {
 	asBytes, _ := json.Marshal(tlsConf)
 	fmt.Println("connecting to " + url + ": " + string(asBytes))
 
-	_, err := dial(url, &tlsConf)
+	_, err := rc.Dial(url, &tlsConf)
 	if err != nil {
 		panic(err)
 	}

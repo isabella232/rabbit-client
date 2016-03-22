@@ -1,4 +1,4 @@
-package main
+package lib
 
 import (
 	"crypto/tls"
@@ -13,10 +13,10 @@ import (
 
 // AMQPConfiguration is what it says
 type AMQPConfiguration struct {
-	URL       string           `json:"url"`
-	Exchange  string           `json:"exchange"`
-	Queue     string           `json:"queue"`
-	TLSConfig TLSConfiguration `json:"tls_config"`
+	URL       string             `json:"url"`
+	Exchange  ExchangeDefinition `json:"exchange"`
+	Queue     string             `json:"queue"`
+	TLSConfig TLSConfiguration   `json:"tls_config"`
 }
 
 // TLSConfiguration contains the configuration for doing TLS
@@ -24,6 +24,12 @@ type TLSConfiguration struct {
 	Cert    string   `json:"cert"`
 	Key     string   `json:"key"`
 	CACerts []string `json:"ca_certs"`
+}
+
+// ExchangeDefinition defines the information about an exchange
+type ExchangeDefinition struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
 }
 
 // IsValid checks for blanks and obvious errors
@@ -73,7 +79,7 @@ func translate(deliveries <-chan amqp.Delivery, messages chan<- *Message) {
 }
 
 // Dial is responsible for contacting the broker with a TLS connection
-func dial(url string, config *TLSConfiguration) (*amqp.Connection, error) {
+func Dial(url string, config *TLSConfiguration) (*amqp.Connection, error) {
 	if !config.IsValid() {
 		return nil, errors.New("the TLS configuration is invalid")
 	}
@@ -98,8 +104,8 @@ func dial(url string, config *TLSConfiguration) (*amqp.Connection, error) {
 	return amqp.DialTLS(url, cfg)
 }
 
-// responsible for setting up the actual queue, and starting to consume
-func connect(conn *amqp.Connection, exchangeName, queueName string) (<-chan amqp.Delivery, error) {
+// Connect sets up the actual queue, and starting to consume
+func Connect(conn *amqp.Connection, exchange *ExchangeDefinition, queueName string) (<-chan amqp.Delivery, error) {
 	log.Printf("Connected to broker - getting Channel\n")
 	channel, err := conn.Channel()
 	if err != nil {
@@ -107,13 +113,13 @@ func connect(conn *amqp.Connection, exchangeName, queueName string) (<-chan amqp
 	}
 
 	if err = channel.ExchangeDeclare(
-		exchangeName, // name
-		"fanout",     // kind
-		true,         // durable
-		true,         // auto delete
-		false,        // internal
-		false,        // noWait
-		nil,          // amqp.Table
+		exchange.Name, // name
+		exchange.Type, // kind
+		true,          // durable
+		true,          // auto delete
+		false,         // internal
+		false,         // noWait
+		nil,           // amqp.Table
 	); err != nil {
 		return nil, err
 	}
@@ -135,7 +141,7 @@ func connect(conn *amqp.Connection, exchangeName, queueName string) (<-chan amqp
 	if err = channel.QueueBind(
 		queue.Name,            // name of the queue
 		"bitballoon.commands", // bindingKey
-		exchangeName,          // sourceExchange
+		exchange.Name,         // sourceExchange
 		false,                 // noWait
 		nil,                   // arguments
 	); err != nil {

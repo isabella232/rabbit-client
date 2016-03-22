@@ -1,6 +1,9 @@
 {
   "url": "amqps://rabbit.lo",
-  "exchange": "todo",
+  "exchange": {
+    "name": "todo",
+    "type": "direct"
+  },
   "queue": "todo",
   "tls_config": {
     "cert": "/usr/local/etc/certs/rabbit.pem",

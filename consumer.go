@@ -1,4 +1,4 @@
-package main
+package lib
 
 import "log"
 
@@ -8,13 +8,13 @@ func NewConsumer(amqpConfig *AMQPConfiguration) (<-chan *Message, error) {
 	messages := make(chan *Message)
 
 	// first get a TLS connection to the broker
-	conn, err := dial(amqpConfig.URL, &amqpConfig.TLSConfig)
+	conn, err := Dial(amqpConfig.URL, &amqpConfig.TLSConfig)
 	if err != nil {
 		return nil, err
 	}
 
 	// then connect to the exchange
-	deliveries, err := connect(conn, amqpConfig.Exchange, amqpConfig.Queue)
+	deliveries, err := Connect(conn, &amqpConfig.Exchange, amqpConfig.Queue)
 	if err != nil {
 		return nil, err
 	}
