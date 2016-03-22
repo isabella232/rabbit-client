@@ -32,6 +32,19 @@ type ExchangeDefinition struct {
 	Type string `json:"type"`
 }
 
+// Message is a container for the payload and command
+type Message struct {
+	Payload string
+
+	delivery *amqp.Delivery
+}
+
+// Ack is a pass through to the raw delivery so that the final
+// consumer can handle the success/failure decision
+func (m Message) Ack(state bool) {
+	m.delivery.Ack(state)
+}
+
 // IsValid checks for blanks and obvious errors
 func (t TLSConfiguration) IsValid() bool {
 	if t.Cert == "" {
@@ -46,20 +59,6 @@ func (t TLSConfiguration) IsValid() bool {
 		return false
 	}
 	return true
-}
-
-// Message is a container for the payload and command
-type Message struct {
-	Command string
-	Payload string
-
-	delivery *amqp.Delivery
-}
-
-// Ack is a pass through to the raw delivery so that the final
-// consumer can handle the success/failure decision
-func (m Message) Ack(state bool) {
-	m.delivery.Ack(state)
 }
 
 // responsible for translating between the AMQP delivery and the Message
