@@ -129,24 +129,34 @@ func publish(c *cli.Context) {
 	log.Println("connected channel to exchange")
 
 	ask := true
-	var body string
 	var rk string
+	var body string
+	var contentType = "application/json"
 	var catcher []byte
 	bio := bufio.NewReader(os.Stdout)
 	for {
 		if ask {
-			fmt.Print("Routing Key:")
+			fmt.Print("Routing Key: ")
 			if catcher, _, err = bio.ReadLine(); err != nil {
 				panic(err)
 			}
 
 			rk = string(catcher)
 
-			fmt.Print("Enter Payload: ")
+			fmt.Print("Payload: ")
 			if catcher, _, err = bio.ReadLine(); err != nil {
 				panic(err)
 			}
 			body = string(catcher)
+
+			fmt.Printf("Content Type [%s]: ", contentType)
+			if catcher, _, err = bio.ReadLine(); err != nil {
+				panic(err)
+			}
+			res := strings.Trim(strings.ToLower(string(catcher)), " ")
+			if res != "" {
+				contentType = res
+			}
 
 			ask = false
 		}
@@ -165,6 +175,21 @@ func publish(c *cli.Context) {
 		}
 
 		// TODO actually send shit
+		if err = channel.Publish(
+			exName, // exchange
+			rk,     // routing key
+			false,  // mandatory
+			true,   // immediate
+			amqp.Publishing{
+				Headers:      amqp.Table{},
+				ContentType:  contentType,
+				Body:         []byte(body),
+				DeliveryMode: mode,
+				Priority:     0,
+			},
+		); err != nil {
+			panic(err)
+		}
 		_ = mode
 
 		var repeat string
