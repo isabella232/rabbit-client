@@ -59,7 +59,7 @@ func main() {
 		publishCmd,
 		{
 			Name:   "connect",
-			Usage:  "connect [exchange]",
+			Usage:  "connect",
 			Action: func(c *cli.Context) { connectToBroker(c) },
 		},
 		{
@@ -109,7 +109,7 @@ func publish(c *cli.Context) {
 		panic(err)
 	}
 
-	log.Println("got Connection, getting Channel")
+	log.Printf("Connecting to exchange %s\n", exName)
 	channel, err := conn.Channel()
 	if err != nil {
 		panic(err)
@@ -118,7 +118,7 @@ func publish(c *cli.Context) {
 	if err := channel.ExchangeDeclare(
 		exName, // name
 		exType, // type
-		false,  // durable
+		true,   // durable
 		false,  // auto-deleted
 		false,  // internal
 		false,  // noWait
@@ -126,7 +126,7 @@ func publish(c *cli.Context) {
 	); err != nil {
 		panic(err)
 	}
-	log.Println("connected channel to exchange")
+	log.Println("Connected to exchange")
 
 	ask := true
 	var rk string
@@ -174,12 +174,11 @@ func publish(c *cli.Context) {
 			os.Exit(0)
 		}
 
-		// TODO actually send shit
 		if err = channel.Publish(
 			exName, // exchange
 			rk,     // routing key
-			false,  // mandatory
-			true,   // immediate
+			true,   // mandatory
+			false,  // immediate
 			amqp.Publishing{
 				Headers:      amqp.Table{},
 				ContentType:  contentType,
@@ -190,7 +189,7 @@ func publish(c *cli.Context) {
 		); err != nil {
 			panic(err)
 		}
-		_ = mode
+		fmt.Println("sent")
 
 		var repeat string
 		fmt.Print("Change configuration [y/N]?")

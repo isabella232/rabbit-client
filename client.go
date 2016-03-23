@@ -3,7 +3,6 @@ package lib
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"errors"
 	"io/ioutil"
 	"log"
@@ -15,7 +14,7 @@ import (
 type AMQPConfiguration struct {
 	URL       string             `json:"url"`
 	Exchange  ExchangeDefinition `json:"exchange"`
-	Queue     string             `json:"queue"`
+	Queue     QueueDefinition    `json:"queue"`
 	TLSConfig TLSConfiguration   `json:"tls_config"`
 }
 
@@ -32,17 +31,10 @@ type ExchangeDefinition struct {
 	Type string `json:"type"`
 }
 
-// Message is a container for the payload and command
-type Message struct {
-	Payload string
-
-	delivery *amqp.Delivery
-}
-
-// Ack is a pass through to the raw delivery so that the final
-// consumer can handle the success/failure decision
-func (m Message) Ack(state bool) {
-	m.delivery.Ack(state)
+// QueueDefinition contains the information about a queue
+type QueueDefinition struct {
+	Name       string `json:"name"`
+	BindingKey string `json:"binding_key"`
 }
 
 // IsValid checks for blanks and obvious errors
@@ -59,22 +51,6 @@ func (t TLSConfiguration) IsValid() bool {
 		return false
 	}
 	return true
-}
-
-// responsible for translating between the AMQP delivery and the Message
-func translate(deliveries <-chan amqp.Delivery, messages chan<- *Message) {
-	for delivery := range deliveries {
-		msg := new(Message)
-		if err := json.Unmarshal(delivery.Body, msg); err != nil {
-			log.Printf("Failed to parse message: %s\n", delivery.Body)
-		} else {
-			msg.delivery = &delivery
-			messages <- msg
-		}
-	}
-
-	// will be closed when we are out of deliveries (it is closed)
-	close(messages)
 }
 
 // Dial is responsible for contacting the broker with a TLS connection
@@ -103,9 +79,9 @@ func Dial(url string, config *TLSConfiguration) (*amqp.Connection, error) {
 	return amqp.DialTLS(url, cfg)
 }
 
-// Connect sets up the actual queue, and starting to consume
-func Connect(conn *amqp.Connection, exchange *ExchangeDefinition, queueName string) (<-chan amqp.Delivery, error) {
-	log.Printf("Connected to broker - getting Channel\n")
+// Bind sets up the actual queue, and starting to consume
+func Bind(conn *amqp.Connection, exchange *ExchangeDefinition, queue *QueueDefinition) (<-chan amqp.Delivery, error) {
+	log.Printf("Creating exchange %s/%s\n", exchange.Name, exchange.Type)
 	channel, err := conn.Channel()
 	if err != nil {
 		return nil, err
@@ -115,7 +91,7 @@ func Connect(conn *amqp.Connection, exchange *ExchangeDefinition, queueName stri
 		exchange.Name, // name
 		exchange.Type, // kind
 		true,          // durable
-		true,          // auto delete
+		false,         // auto delete
 		false,         // internal
 		false,         // noWait
 		nil,           // amqp.Table
@@ -123,31 +99,35 @@ func Connect(conn *amqp.Connection, exchange *ExchangeDefinition, queueName stri
 		return nil, err
 	}
 
-	var queue amqp.Queue
-	log.Printf("Declaring queue %s\n", queueName)
+	var amqpQueue amqp.Queue
+	log.Printf("Creating queue %s/%s\n", queue.Name, queue.BindingKey)
 
-	if queue, err = channel.QueueDeclare(
-		queueName, // name of the queue
-		true,      // durable
-		true,      // delete when usused
-		false,     // exclusive
-		false,     // noWait
-		nil,       // arguments
+	if amqpQueue, err = channel.QueueDeclare(
+		queue.Name, // name of the queue
+		true,       // durable
+		true,       // delete when usused
+		false,      // exclusive
+		false,      // noWait
+		nil,        // arguments
 	); err != nil {
 		return nil, err
 	}
 
 	if err = channel.QueueBind(
-		queue.Name,            // name of the queue
-		"bitballoon.commands", // bindingKey
-		exchange.Name,         // sourceExchange
-		false,                 // noWait
-		nil,                   // arguments
+		amqpQueue.Name,   // name of the queue
+		queue.BindingKey, // bindingKey
+		exchange.Name,    // sourceExchange
+		false,            // noWait
+		nil,              // arguments
 	); err != nil {
 		return nil, err
 	}
 
-	log.Printf("Queue bound to Exchange, starting Consumer\n")
+	log.Printf(
+		"Bound to Queue (%s) on Exchange(%s), starting Consumer\n",
+		amqpQueue.Name,
+		exchange.Name)
+
 	if delivery, err := channel.Consume(
 		queue.Name,     // name
 		"cache-primer", // consumerTag,
