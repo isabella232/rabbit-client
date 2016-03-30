@@ -91,7 +91,7 @@ func Bind(conn *amqp.Connection, exchange *ExchangeDefinition, queue *QueueDefin
 		exchange.Name, // name
 		exchange.Type, // kind
 		true,          // durable
-		false,         // auto delete
+		true,          // auto delete
 		false,         // internal
 		false,         // noWait
 		nil,           // amqp.Table
